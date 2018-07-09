@@ -1,3 +1,6 @@
+import findspark
+findspark.init()
+
 import tweepy
 import socket
 import requests

@@ -1,3 +1,6 @@
+import findspark
+findspark.init()
+
 import os
 from pyspark.sql import SQLContext, SparkSession
 from pyspark.streaming import StreamingContext
@@ -20,7 +23,7 @@ def train_model():
              .where((data['sentiment'] == 'empty') |
                     (data['sentiment'] == 'sadness') |
                     (data['sentiment'] == 'enthusiam') |
-                    (data['sentiment'] == 'worry') |  ) \
+                    (data['sentiment'] == 'worry') |
                     (data['sentiment'] == 'surprise') |
                     (data['sentiment'] == 'love') |
                     (data['sentiment'] == 'hate') |
@@ -29,12 +32,12 @@ def train_model():
                     (data['sentiment'] == 'relief') |
                     (data['sentiment'] == 'boredom') |
                     (data['sentiment'] == 'fun') |
-                    (data['sentiment'] == 'happiness') |
+                    (data['sentiment'] == 'happiness')) \
              .na.drop(thresh=3)
 
   data.show(5)
 
-  data.groupBy("Sentiment") \
+  data.groupBy("sentiment") \
       .count() \
       .orderBy(col("count").desc()) \
       .show()
@@ -59,25 +62,73 @@ def train_model():
 
   lr = LogisticRegression(maxIter=20, regParam=0.3, elasticNetParam=0)
 
+  # convert indexes to labels
+  indexToLabels = IndexToString(inputCol = "label", outputCol = "originalSentiment")
+
   # build the pipeline
-  pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, countVectors, label_stringIdx, lr])
+  pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, countVectors, label_stringIdx, lr, indexToLabels])
 
   # Fit the pipeline to training documents.
   pipelineFit = pipeline.fit(trainingData)
   predictions = pipelineFit.transform(testData)
 
   predictions.filter(predictions['prediction'] == 0) \
-      .select("SentimentText","Sentiment","probability","label","prediction") \
+      .select("content","sentiment","probability","label","prediction") \
       .orderBy("probability", ascending=False) \
       .show(n = 10, truncate = 30)
 
   predictions.filter(predictions['prediction'] == 1) \
-      .select("SentimentText","Sentiment","probability","label","prediction") \
+      .select("content","sentiment","probability","label","prediction") \
       .orderBy("probability", ascending=False) \
       .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 2) \
-      .select("SentimentText","Sentiment","probability","label","prediction") \
+  predictions.filter(predictions['prediction'] == 3) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 4) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 5) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 6) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 7) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 8) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 9) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 10) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 11) \
+      .select("content","sentiment","probability","label","prediction") \
+      .orderBy("probability", ascending=False) \
+      .show(n = 10, truncate = 30)
+
+  predictions.filter(predictions['prediction'] == 12) \
+      .select("content","sentiment","probability","label","prediction") \
       .orderBy("probability", ascending=False) \
       .show(n = 10, truncate = 30)
 
@@ -107,8 +158,8 @@ def save_csv(time, rdd):
     trainedModel = PipelineModel.load('logreg.model')
     testDF = trainedModel.transform(tweetsDataFrame)
     testDF.createOrReplaceTempView("tweets")
-    
-    finalDataFrame = spark.sql("select SentimentText, prediction from tweets")
+
+    finalDataFrame = spark.sql("select content, prediction from tweets")
     finalDataFrame.show()
     finalDataFrame.coalesce(1).write.format("com.databricks.spark.csv").save(path='csv', format='csv', mode='append', sep='\t')
   except Exception as e:
@@ -122,7 +173,7 @@ def save_csv(time, rdd):
 # ===================================================
 sc = SparkContext("local[2]", "Tweet Streaming App")
 sqlContext = SQLContext(sc)
-ssc = StreamingContext(sc, 10)
+ssc = StreamingContext(sc,10)
 ssc.checkpoint( "./tweets/")
 # ssc.checkpoint( "file:/home/ubuntu/tweets/checkpoint/")
 
