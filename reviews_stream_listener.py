@@ -175,7 +175,7 @@ sc = SparkContext("local", "Tweet Streaming App")
 sqlContext = SQLContext(sc)
 #ssc = StreamingContext(sc,10)
 #ssc.checkpoint( "./tweets/")
-# ssc.checkpoint( "file:/home/ubuntu/tweets/checkpoint/")
+#ssc.checkpoint( "file:/home/ubuntu/tweets/checkpoint/")
 
 # ==========================================
 # = Train the model if not already trained =
@@ -183,6 +183,14 @@ sqlContext = SQLContext(sc)
 is_model_trained = os.path.isdir("emotions.model")
 if not is_model_trained:
    train_model()
+
+
+data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
+trainedModel = PipelineModel.load('emotions.model')
+testDF = trainedModel.transform(data)
+#testDF.createOrReplaceTempView("tweets")
+
+testDF.coalesce(1).write.format("com.databricks.spark.csv").save(path='csv', format='csv', mode='append', sep='\t')
 
 
 """ 
