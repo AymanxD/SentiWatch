@@ -1,6 +1,3 @@
-import findspark
-findspark.init()
-
 import os
 from pyspark.sql import SQLContext, SparkSession
 from pyspark.streaming import StreamingContext
@@ -190,7 +187,10 @@ trainedModel = PipelineModel.load('emotions.model')
 testDF = trainedModel.transform(data)
 #testDF.createOrReplaceTempView("tweets")
 
-testDF.coalesce(1).write.format("com.databricks.spark.csv").save(path='csv', format='csv', mode='append', sep='\t')
+spark = getSparkSessionInstance(sc.getConf())
+testDF.createOrReplaceTempView("tweets")
+finalDataFrame = spark.sql("select content, prediction from tweets")
+finalDataFrame.coalesce(1).write.format("com.databricks.spark.csv").save(path='csv', format='csv', mode='append', sep='\t')
 
 
 """ 

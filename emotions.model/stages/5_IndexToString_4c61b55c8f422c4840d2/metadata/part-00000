@@ -1,1 +1,0 @@
-{"class":"org.apache.spark.ml.feature.IndexToString","timestamp":1532264639810,"sparkVersion":"2.3.0","uid":"IndexToString_4c61b55c8f422c4840d2","paramMap":{"outputCol":"originalSentiment","inputCol":"label"}}
