@@ -109,6 +109,7 @@ venv.bak/
 
 ### Python Patch ###
 .venv/
+
 sentiment.model
 csv
 tweets
