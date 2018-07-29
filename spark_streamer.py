@@ -15,12 +15,13 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator,MulticlassClassi
 from pyspark.ml import PipelineModel
 from collections import namedtuple
 
+# Hosted elasticache URL
 import redis
 r = redis.StrictRedis(host='dwh-db.0gx2x1.ng.0001.use2.cache.amazonaws.com', port=6379, db=0)
 
 def train_model():
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
-
+  #Drop unused columns
   drop_list = ['tweet_id']
   data = data.select([column for column in data.columns if column not in drop_list]) \
              .where(
@@ -47,16 +48,12 @@ def train_model():
       .show()
 
   # set seed for reproducibility
-  (trainingData, testData) = data.randomSplit([0.9, 0.1], seed = 100)
+  (trainingData, testData) = data.randomSplit([0.8, 0.2], seed = 100)
   print("Training Dataset Count: " + str(trainingData.count()))
   print("Test Dataset Count: " + str(testData.count()))
 
   # regular expression tokenizer
   regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
-
-  # stop words
-  add_stopwords = ["http","https","amp","rt","t","c","the"]
-  stopwordsRemover = StopWordsRemover(inputCol="words", outputCol="filtered").setStopWords(add_stopwords)
 
   # bag of words count
   countVectors = CountVectorizer(inputCol="filtered", outputCol="features", vocabSize=10000, minDF=5)
@@ -69,10 +66,10 @@ def train_model():
   # convert prediction to the predictedSentiment
   indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
 
-  # build the pipeline
-  pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, countVectors, label_stringIdx, nb, indexToLabels])
+  # Buidl spark pipeline
+  pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
 
-  # Fit the pipeline to training documents.
+  # Fit the pipelin.
   pipelineFit = pipeline.fit(trainingData)
   predictions = pipelineFit.transform(testData)
 
@@ -137,12 +134,12 @@ def train_model():
       .show(n = 10, truncate = 30)
 
 
-  # Evaluate, metricName=[accuracy | f1]default f1 measure
+  # Retrive F1 accuracy score
   evaluator = MulticlassClassificationEvaluator(predictionCol="prediction",labelCol="label")
   print("F1: %g" % (evaluator.evaluate(predictions)))
   pipelineFit.save("sentiment.model")
 
-
+# Retrieve SparkSession instance
 def getSparkSessionInstance(sparkConf):
   if ("sparkSessionSingletonInstance" not in globals()):
     globals()["sparkSessionSingletonInstance"] = SparkSession \
@@ -152,7 +149,7 @@ def getSparkSessionInstance(sparkConf):
   return globals()["sparkSessionSingletonInstance"]
 
 
-def save_csv(time, rdd):
+def store_elasticache(time, rdd):
   try:
     # Get the singleton instance of SparkSession
     spark = getSparkSessionInstance(rdd.context.getConf())
@@ -162,11 +159,6 @@ def save_csv(time, rdd):
     tweetsDataFrame = spark.createDataFrame(rowRdd)
     trainedModel = PipelineModel.load('sentiment.model')
     testDF = trainedModel.transform(tweetsDataFrame)
-    testDF.createOrReplaceTempView("tweets")
-
-    sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
-    sentimentCount.show()
-    sentimentCount.coalesce(1).write.format("com.databricks.spark.csv").save(path='sentimentCount', format='json', mode='append', sep='\t')
   except Exception as e:
     print(e.message)
     pass
@@ -196,6 +188,6 @@ socket_stream = ssc.socketTextStream("127.0.0.1", 5555)
 tweetsDStream = socket_stream.window(20)
 Tweet = namedtuple('Tweet', ("content"))
 
-tweetsDStream.foreachRDD(save_csv)
+tweetsDStream.foreachRDD(store_elasticache)
 ssc.start()
-ssc.awaitTerminationOrTimeout(60)
+ssc.awaitTerminationOrTimeout(300)
