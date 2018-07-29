@@ -15,6 +15,9 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator,MulticlassClassi
 from pyspark.ml import PipelineModel
 from collections import namedtuple
 
+import redis
+r = redis.StrictRedis(host='dwh-db.0gx2x1.ng.0001.use2.cache.amazonaws.com', port=6379, db=0)
+
 def train_model():
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
 
@@ -160,10 +163,10 @@ def save_csv(time, rdd):
     trainedModel = PipelineModel.load('sentiment.model')
     testDF = trainedModel.transform(tweetsDataFrame)
     testDF.createOrReplaceTempView("tweets")
-    print("saving")
-    finalDataFrame = spark.sql("select predictedSentiment, content from tweets")
-    finalDataFrame.show()
-    finalDataFrame.coalesce(1).write.format("com.databricks.spark.csv").save(path='tweet_sentiments', format='json', mode='append', sep='\t')
+
+    sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
+    sentimentCount.show()
+    sentimentCount.coalesce(1).write.format("com.databricks.spark.csv").save(path='sentimentCount', format='json', mode='append', sep='\t')
   except Exception as e:
     print(e.message)
     pass
@@ -194,7 +197,5 @@ tweetsDStream = socket_stream.window(20)
 Tweet = namedtuple('Tweet', ("content"))
 
 tweetsDStream.foreachRDD(save_csv)
-print("I am running")
 ssc.start()
-ssc.awaitTerminationOrTimeout(300)
-print("Time is up")
+ssc.awaitTerminationOrTimeout(60)
