@@ -60,9 +60,13 @@ def get_twitter_api():
   api = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True, retry_count=10, retry_delay=5, retry_errors=5)
   return c, api
 
-
-if __name__ == '__main__':
+def stream(args):
+  print(args)
   c, api = get_twitter_api()
   streamListener = TwitterStreamListener(c)
   myStream = tweepy.Stream(auth=api.auth, listener=streamListener, tweet_mode='extended')
-  myStream.filter(track=['movie','movies'], async=True)
+  #arguments = sys.argv[1:]
+  arguments = args[1:]
+  myStream.filter(track=arguments, async=True)
+
+stream(sys.argv)

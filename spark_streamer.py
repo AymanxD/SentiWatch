@@ -44,7 +44,7 @@ def train_model():
       .show()
 
   # set seed for reproducibility
-  (trainingData, testData) = data.randomSplit([0.7, 0.3], seed = 100)
+  (trainingData, testData) = data.randomSplit([0.9, 0.1], seed = 100)
   print("Training Dataset Count: " + str(trainingData.count()))
   print("Test Dataset Count: " + str(testData.count()))
 
@@ -160,7 +160,7 @@ def save_csv(time, rdd):
     trainedModel = PipelineModel.load('sentiment.model')
     testDF = trainedModel.transform(tweetsDataFrame)
     testDF.createOrReplaceTempView("tweets")
-    
+    print("saving")
     finalDataFrame = spark.sql("select predictedSentiment, content from tweets")
     finalDataFrame.show()
     finalDataFrame.coalesce(1).write.format("com.databricks.spark.csv").save(path='tweet_sentiments', format='json', mode='append', sep='\t')
@@ -194,6 +194,7 @@ tweetsDStream = socket_stream.window(20)
 Tweet = namedtuple('Tweet', ("content"))
 
 tweetsDStream.foreachRDD(save_csv)
-
+print("I am running")
 ssc.start()
 ssc.awaitTerminationOrTimeout(300)
+print("Time is up")
