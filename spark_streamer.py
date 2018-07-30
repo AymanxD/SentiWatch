@@ -1,4 +1,4 @@
-import os
+import os, sys, json
 import findspark
 findspark.init()
 
@@ -15,9 +15,15 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator,MulticlassClassi
 from pyspark.ml import PipelineModel
 from collections import namedtuple
 
+# Hosted elasticache URL
+import redis
+key = sys.argv[1]
+print('key in streamer:')
+print(key)
+
 def train_model():
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
-
+  #Drop unused columns
   drop_list = ['tweet_id']
   data = data.select([column for column in data.columns if column not in drop_list]) \
              .where(
@@ -44,19 +50,15 @@ def train_model():
       .show()
 
   # set seed for reproducibility
-  (trainingData, testData) = data.randomSplit([0.7, 0.3], seed = 100)
+  (trainingData, testData) = data.randomSplit([0.8, 0.2], seed = 100)
   print("Training Dataset Count: " + str(trainingData.count()))
   print("Test Dataset Count: " + str(testData.count()))
 
   # regular expression tokenizer
   regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
 
-  # stop words
-  add_stopwords = ["http","https","amp","rt","t","c","the"]
-  stopwordsRemover = StopWordsRemover(inputCol="words", outputCol="filtered").setStopWords(add_stopwords)
-
   # bag of words count
-  countVectors = CountVectorizer(inputCol="filtered", outputCol="features", vocabSize=10000, minDF=5)
+  countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
 
   # convert string labels to indexes
   label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
@@ -66,10 +68,10 @@ def train_model():
   # convert prediction to the predictedSentiment
   indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
 
-  # build the pipeline
-  pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, countVectors, label_stringIdx, nb, indexToLabels])
+  # Buidl spark pipeline
+  pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
 
-  # Fit the pipeline to training documents.
+  # Fit the pipelin.
   pipelineFit = pipeline.fit(trainingData)
   predictions = pipelineFit.transform(testData)
 
@@ -134,12 +136,12 @@ def train_model():
       .show(n = 10, truncate = 30)
 
 
-  # Evaluate, metricName=[accuracy | f1]default f1 measure
+  # Retrive F1 accuracy score
   evaluator = MulticlassClassificationEvaluator(predictionCol="prediction",labelCol="label")
   print("F1: %g" % (evaluator.evaluate(predictions)))
   pipelineFit.save("sentiment.model")
 
-
+# Retrieve SparkSession instance
 def getSparkSessionInstance(sparkConf):
   if ("sparkSessionSingletonInstance" not in globals()):
     globals()["sparkSessionSingletonInstance"] = SparkSession \
@@ -149,7 +151,7 @@ def getSparkSessionInstance(sparkConf):
   return globals()["sparkSessionSingletonInstance"]
 
 
-def save_csv(time, rdd):
+def store_elasticache(time, rdd):
   try:
     # Get the singleton instance of SparkSession
     spark = getSparkSessionInstance(rdd.context.getConf())
@@ -161,11 +163,22 @@ def save_csv(time, rdd):
     testDF = trainedModel.transform(tweetsDataFrame)
     testDF.createOrReplaceTempView("tweets")
     
-    finalDataFrame = spark.sql("select predictedSentiment, content from tweets")
-    finalDataFrame.show()
-    finalDataFrame.coalesce(1).write.format("com.databricks.spark.csv").save(path='tweet_sentiments', format='json', mode='append', sep='\t')
+    sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
+    sentimentCount.show()
+    r = redis.StrictRedis(host='localhost', port=6379, db=0, charset="utf-8", decode_responses=True)
+    existing_data = r.hgetall(key)
+    
+    df_json = sentimentCount.toJSON()
+    for row in df_json.collect():
+      row = json.loads(row)
+      sentiment = row['predictedSentiment']
+      temp_count = int(row['count(predictedSentiment)'])
+      if sentiment in existing_data:
+        temp_count += int(existing_data[sentiment])
+      r.hset(key, sentiment, temp_count)
+      print(r.hgetall(key))
   except Exception as e:
-    print(e.message)
+    print(e)
     pass
 
 
@@ -193,7 +206,6 @@ socket_stream = ssc.socketTextStream("127.0.0.1", 5555)
 tweetsDStream = socket_stream.window(20)
 Tweet = namedtuple('Tweet', ("content"))
 
-tweetsDStream.foreachRDD(save_csv)
-
+tweetsDStream.foreachRDD(store_elasticache)
 ssc.start()
 ssc.awaitTerminationOrTimeout(300)
