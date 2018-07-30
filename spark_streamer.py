@@ -17,7 +17,9 @@ from collections import namedtuple
 
 # Hosted elasticache URL
 import redis
-user_id = sys.argv[1]
+key = sys.argv[1]
+print('key in streamer:')
+print(key)
 
 def train_model():
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
@@ -163,9 +165,9 @@ def store_elasticache(time, rdd):
     
     sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
     sentimentCount.show()
-    r = redis.StrictRedis(host='dwh-db.0gx2x1.ng.0001.use2.cache.amazonaws.com', port=6379, db=0, charset="utf-8", decode_responses=True)
-    existing_data = r.hgetall(user_id)
-    # print(existing_data)
+    r = redis.StrictRedis(host='localhost', port=6379, db=0, charset="utf-8", decode_responses=True)
+    existing_data = r.hgetall(key)
+    
     df_json = sentimentCount.toJSON()
     for row in df_json.collect():
       row = json.loads(row)
@@ -173,8 +175,8 @@ def store_elasticache(time, rdd):
       temp_count = int(row['count(predictedSentiment)'])
       if sentiment in existing_data:
         temp_count += int(existing_data[sentiment])
-      r.hset(user_id, sentiment, temp_count)
-      print(r.hgetall(user_id))
+      r.hset(key, sentiment, temp_count)
+      print(r.hgetall(key))
   except Exception as e:
     print(e)
     pass

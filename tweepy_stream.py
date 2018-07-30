@@ -66,6 +66,8 @@ def stream(args):
   streamListener = TwitterStreamListener(c)
   myStream = tweepy.Stream(auth=api.auth, listener=streamListener, tweet_mode='extended')
   arguments = args[1:]
+  print("args in tweepy")
+  print(arguments)
   myStream.filter(track=arguments, async=True)
 
 stream(sys.argv)
