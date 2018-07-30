@@ -1,4 +1,4 @@
-import os
+import os, sys, json
 import findspark
 findspark.init()
 
@@ -17,7 +17,7 @@ from collections import namedtuple
 
 # Hosted elasticache URL
 import redis
-r = redis.StrictRedis(host='dwh-db.0gx2x1.ng.0001.use2.cache.amazonaws.com', port=6379, db=0)
+user_id = sys.argv[1]
 
 def train_model():
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
@@ -56,7 +56,7 @@ def train_model():
   regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
 
   # bag of words count
-  countVectors = CountVectorizer(inputCol="filtered", outputCol="features", vocabSize=10000, minDF=5)
+  countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
 
   # convert string labels to indexes
   label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
@@ -159,8 +159,24 @@ def store_elasticache(time, rdd):
     tweetsDataFrame = spark.createDataFrame(rowRdd)
     trainedModel = PipelineModel.load('sentiment.model')
     testDF = trainedModel.transform(tweetsDataFrame)
+    testDF.createOrReplaceTempView("tweets")
+    
+    sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
+    sentimentCount.show()
+    r = redis.StrictRedis(host='dwh-db.0gx2x1.ng.0001.use2.cache.amazonaws.com', port=6379, db=0, charset="utf-8", decode_responses=True)
+    existing_data = r.hgetall(user_id)
+    # print(existing_data)
+    df_json = sentimentCount.toJSON()
+    for row in df_json.collect():
+      row = json.loads(row)
+      sentiment = row['predictedSentiment']
+      temp_count = int(row['count(predictedSentiment)'])
+      if sentiment in existing_data:
+        temp_count += int(existing_data[sentiment])
+      r.hset(user_id, sentiment, temp_count)
+      print(r.hgetall(user_id))
   except Exception as e:
-    print(e.message)
+    print(e)
     pass
 
 
