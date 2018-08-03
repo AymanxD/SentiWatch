@@ -22,6 +22,35 @@ print('key in streamer:')
 print(key)
 
 def train_model():
+  '''
+  if(dataRdd != None):
+    print("**************************************************************************************************** Inside train model with new rdd")
+    # Read the model
+    pipeModel_Prev = PipelineModel.load('sentiment.model')
+    
+    # regular expression tokenizer
+    regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
+
+    # bag of words count
+    countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
+
+    # convert string labels to indexes
+    label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
+
+    nb = NaiveBayes(featuresCol="features", labelCol="label", smoothing=1.0, modelType="multinomial")
+
+    # convert prediction to the predictedSentiment
+    indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
+
+    # Buidl spark pipeline
+    pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
+
+    # Fit the pipelin.
+    pipeModel_Next = pipeline.fit(dataRDD)
+    pipe_model_new = PipelineModel(stages = [pipeModel_Prev ,pipeModel_Next])
+    print("Workinggggggggggggggg")
+    pipeModel_New.save("sentiment.model")
+  '''
   data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
   #Drop unused columns
   drop_list = ['tweet_id']
@@ -163,6 +192,11 @@ def store_elasticache(time, rdd):
     testDF = trainedModel.transform(tweetsDataFrame)
     testDF.createOrReplaceTempView("tweets")
     
+    '''
+    Train the model again and save it 
+    train_model(dataRDD = testDF)
+    '''
+    
     sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
     sentimentCount.show()
     r = redis.StrictRedis(host='localhost', port=6379, db=0, charset="utf-8", decode_responses=True)
@@ -177,6 +211,11 @@ def store_elasticache(time, rdd):
         temp_count += int(existing_data[sentiment])
       r.hset(key, sentiment, temp_count)
       print(r.hgetall(key))
+    '''
+    Here we need to train the model with the rdd that we have
+      1. Call the train model
+      2. now retrieve the train model
+    '''
   except Exception as e:
     print(e)
     pass
