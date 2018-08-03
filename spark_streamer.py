@@ -21,125 +21,151 @@ key = sys.argv[1]
 print('key in streamer:')
 print(key)
 
-def train_model():
-  data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
-  #Drop unused columns
-  drop_list = ['tweet_id']
-  data = data.select([column for column in data.columns if column not in drop_list]) \
-             .where(
-                    (data['sentiment'] == 'empty') |
-                    (data['sentiment'] == 'sadness') |
-                    (data['sentiment'] == 'enthusiam') |
-                    (data['sentiment'] == 'worry') |
-                    (data['sentiment'] == 'surprise') |
-                    (data['sentiment'] == 'love') |
-                    (data['sentiment'] == 'hate') |
-                    (data['sentiment'] == 'anger') |
-                    (data['sentiment'] == 'neutral') |
-                    (data['sentiment'] == 'relief') |
-                    (data['sentiment'] == 'boredom') |
-                    (data['sentiment'] == 'fun') |
-                    (data['sentiment'] == 'happiness')) \
-             .na.drop(thresh=3)
+def train_model(dataRdd = None ):
+  if (dataRdd != None):
+    print("**************************************************************************************************** Inside train model with new rdd")
+    # regular expression tokenizer
+    regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
 
-  data.show(5)
+    # bag of words count
+    countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
 
-  data.groupBy("sentiment") \
-      .count() \
-      .orderBy(col("count").desc()) \
-      .show()
+    # convert string labels to indexes
+    label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
 
-  # set seed for reproducibility
-  (trainingData, testData) = data.randomSplit([0.8, 0.2], seed = 100)
-  print("Training Dataset Count: " + str(trainingData.count()))
-  print("Test Dataset Count: " + str(testData.count()))
+    nb = NaiveBayes(featuresCol="features", labelCol="label", smoothing=1.0, modelType="multinomial")
 
-  # regular expression tokenizer
-  regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
+    # convert prediction to the predictedSentiment
+    indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
 
-  # bag of words count
-  countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
+    # Buidl spark pipeline
+    pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
 
-  # convert string labels to indexes
-  label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
+    # Fit the pipelin.
+    pipelineFit = pipeline.fit(dataRDD)
+    pipelineFit.fit(dataRdd)
+    print("Workinggggggggggggggg")
+    pipeLineFit.save("sentiment.model")
+  else:  
+    data = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load('text_emotion.csv')
+    #Drop unused columns
+    drop_list = ['tweet_id']
+    data = data.select([column for column in data.columns if column not in drop_list]) \
+               .where(
+                      (data['sentiment'] == 'empty') |
+                      (data['sentiment'] == 'sadness') |
+                      (data['sentiment'] == 'enthusiam') |
+                      (data['sentiment'] == 'worry') |
+                      (data['sentiment'] == 'surprise') |
+                      (data['sentiment'] == 'love') |
+                      (data['sentiment'] == 'hate') |
+                      (data['sentiment'] == 'anger') |
+                      (data['sentiment'] == 'neutral') |
+                      (data['sentiment'] == 'relief') |
+                      (data['sentiment'] == 'boredom') |
+                      (data['sentiment'] == 'fun') |
+                      (data['sentiment'] == 'happiness')) \
+               .na.drop(thresh=3)
 
-  nb = NaiveBayes(featuresCol="features", labelCol="label", smoothing=1.0, modelType="multinomial")
+    data.show(5)
 
-  # convert prediction to the predictedSentiment
-  indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
+    data.groupBy("sentiment") \
+        .count() \
+        .orderBy(col("count").desc()) \
+        .show()
 
-  # Buidl spark pipeline
-  pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
+    # set seed for reproducibility
+    (trainingData, testData) = data.randomSplit([0.8, 0.2], seed = 100)
+    print(trainingData)
+    print("Training Dataset Count: " + str(trainingData.count()))
+    print("Test Dataset Count: " + str(testData.count()))
 
-  # Fit the pipelin.
-  pipelineFit = pipeline.fit(trainingData)
-  predictions = pipelineFit.transform(testData)
+    # regular expression tokenizer
+    regexTokenizer = RegexTokenizer(inputCol="content", outputCol="words", pattern="\\W")
 
-  predictions.filter(predictions['prediction'] == 0) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    # bag of words count
+    countVectors = CountVectorizer(inputCol="words", outputCol="features", vocabSize=10000, minDF=5)
 
-  predictions.filter(predictions['prediction'] == 1) \
-      .select("content","sentiment", "predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    # convert string labels to indexes
+    label_stringIdx = StringIndexer(inputCol = "sentiment", outputCol = "label")
 
-  predictions.filter(predictions['prediction'] == 2) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    nb = NaiveBayes(featuresCol="features", labelCol="label", smoothing=1.0, modelType="multinomial")
 
-  predictions.filter(predictions['prediction'] == 3) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    # convert prediction to the predictedSentiment
+    indexToLabels = IndexToString(inputCol = "prediction", outputCol = "predictedSentiment", labels=["bordem","love","relief", "fun", "hate", "neutral", "anger", "happiness", "surpirse","sadness","worry", "empty"])
 
-  predictions.filter(predictions['prediction'] == 4) \
-      .select("content","sentiment","predictedSentiment", "probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    # Buidl spark pipeline
+    pipeline = Pipeline(stages=[regexTokenizer, countVectors, label_stringIdx, nb, indexToLabels])
 
-  predictions.filter(predictions['prediction'] == 5) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    # Fit the pipelin.
+    pipelineFit = pipeline.fit(trainingData)
+    predictions = pipelineFit.transform(testData)
 
-  predictions.filter(predictions['prediction'] == 6) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 0) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 7) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 1) \
+        .select("content","sentiment", "predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 8) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 2) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 9) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 3) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 10) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 4) \
+        .select("content","sentiment","predictedSentiment", "probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
-  predictions.filter(predictions['prediction'] == 11) \
-      .select("content","sentiment","predictedSentiment","probability","label","prediction") \
-      .orderBy("probability", ascending=False) \
-      .show(n = 10, truncate = 30)
+    predictions.filter(predictions['prediction'] == 5) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 6) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 7) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 8) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 9) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 10) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
+
+    predictions.filter(predictions['prediction'] == 11) \
+        .select("content","sentiment","predictedSentiment","probability","label","prediction") \
+        .orderBy("probability", ascending=False) \
+        .show(n = 10, truncate = 30)
 
 
-  # Retrive F1 accuracy score
-  evaluator = MulticlassClassificationEvaluator(predictionCol="prediction",labelCol="label")
-  print("F1: %g" % (evaluator.evaluate(predictions)))
-  pipelineFit.save("sentiment.model")
+    # Retrive F1 accuracy score
+    evaluator = MulticlassClassificationEvaluator(predictionCol="prediction",labelCol="label")
+    print("F1: %g" % (evaluator.evaluate(predictions)))
+    pipelineFit.save("sentiment.model")
 
 # Retrieve SparkSession instance
 def getSparkSessionInstance(sparkConf):
@@ -160,8 +186,19 @@ def store_elasticache(time, rdd):
     rowRdd = rdd.map(lambda w: Tweet(w))
     tweetsDataFrame = spark.createDataFrame(rowRdd)
     trainedModel = PipelineModel.load('sentiment.model')
+    
     testDF = trainedModel.transform(tweetsDataFrame)
+    # print("Before :-")
+    # testDF.show(5)
     testDF.createOrReplaceTempView("tweets")
+    # print("After :-", testDF.show(5))
+    '''
+    Train the model again and save it 
+    '''
+    # train_model(testDF)
+    trainedModel.fit(testDF)
+    print("Workinggggggggggggggg")
+    trainedModel.save("sentiment.model")
     
     sentimentCount = spark.sql("select predictedSentiment, count(predictedSentiment) from tweets group by predictedSentiment")
     sentimentCount.show()
@@ -177,6 +214,11 @@ def store_elasticache(time, rdd):
         temp_count += int(existing_data[sentiment])
       r.hset(key, sentiment, temp_count)
       print(r.hgetall(key))
+    '''
+    Here we need to train the model with the rdd that we have
+      1. Call the train model
+      2. now retrieve the train model
+    '''  
   except Exception as e:
     print(e)
     pass
